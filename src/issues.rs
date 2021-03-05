@@ -80,84 +80,84 @@ impl Issues {
         Issues { jira: jira.clone() }
     }
 
-    pub fn get<I>(&self, id: I) -> Result<Issue>
+    pub async fn get<I>(&self, id: I) -> Result<Issue>
     where
         I: Into<String>,
     {
-        self.jira.get("api", &format!("/issue/{}", id.into()))
+        self.jira.get("api", &format!("/issue/{}", id.into())).await
     }
-    pub fn create(&self, data: CreateIssue) -> Result<CreateResponse> {
-        self.jira.post("api", "/issue", data)
+
+    pub async fn create(&self, data: CreateIssue) -> Result<CreateResponse> {
+        self.jira.post("api", "/issue", data).await
     }
 
     /// returns a single page of issues results
     /// https://docs.atlassian.com/jira-software/REST/latest/#agile/1.0/board-getIssuesForBoard
-    pub fn list(&self, board: &Board, options: &SearchOptions) -> Result<IssueResults> {
+    pub async fn list(&self, board: &Board, options: &SearchOptions) -> Result<IssueResults> {
         let mut path = vec![format!("/board/{}/issue", board.id)];
         let query_options = options.serialize().unwrap_or_default();
         let query = form_urlencoded::Serializer::new(query_options).finish();
 
         path.push(query);
 
-        self.jira
-            .get::<IssueResults>("agile", path.join("?").as_ref())
+        self.jira.get::<IssueResults>("agile", path.join("?").as_ref()).await
     }
 
-    /// runs a type why may be used to iterate over consecutive pages of results
-    /// https://docs.atlassian.com/jira-software/REST/latest/#agile/1.0/board-getIssuesForBoard
-    pub fn iter<'a>(&self, board: &'a Board, options: &'a SearchOptions) -> Result<IssuesIter<'a>> {
-        IssuesIter::new(board, options, &self.jira)
-    }
+    // runs a type why may be used to iterate over consecutive pages of results
+    // https://docs.atlassian.com/jira-software/REST/latest/#agile/1.0/board-getIssuesForBoard
+    // pub fn iter<'a>(&self, board: &'a Board, options: &'a SearchOptions) -> Result<IssuesIter<'a>> {
+    //     IssuesIter::new(board, options, &self.jira)
+    // }
 }
 
-/// provides an iterator over multiple pages of search results
-#[derive(Debug)]
-pub struct IssuesIter<'a> {
-    jira: Jira,
-    board: &'a Board,
-    results: IssueResults,
-    search_options: &'a SearchOptions,
-}
-
-impl<'a> IssuesIter<'a> {
-    fn new(board: &'a Board, options: &'a SearchOptions, jira: &Jira) -> Result<Self> {
-        let results = jira.issues().list(board, options)?;
-        Ok(IssuesIter {
-            board,
-            jira: jira.clone(),
-            results,
-            search_options: options,
-        })
-    }
-
-    fn more(&self) -> bool {
-        (self.results.start_at + self.results.max_results) <= self.results.total
-    }
-}
-
-impl<'a> Iterator for IssuesIter<'a> {
-    type Item = Issue;
-    fn next(&mut self) -> Option<Issue> {
-        self.results.issues.pop().or_else(|| {
-            if self.more() {
-                match self.jira.issues().list(
-                    self.board,
-                    &self
-                        .search_options
-                        .as_builder()
-                        .max_results(self.results.max_results)
-                        .start_at(self.results.start_at + self.results.max_results)
-                        .build(),
-                ) {
-                    Ok(new_results) => {
-                        self.results = new_results;
-                        self.results.issues.pop()
-                    }
-                    _ => None,
-                }
-            } else {
-                None
-            }
-        })
-    }
-}
+// provides an iterator over multiple pages of search results
+// #[derive(Debug)]
+// pub struct IssuesIter<'a> {
+//     jira: Jira,
+//     board: &'a Board,
+//     results: IssueResults,
+//     search_options: &'a SearchOptions,
+// }
+//
+// impl<'a> IssuesIter<'a> {
+//     async fn new(board: &'a Board, options: &'a SearchOptions, jira: &Jira) -> Result<Self> {
+//         let results = jira.issues().list(board, options).await?;
+//         Ok(IssuesIter {
+//             board,
+//             jira: jira.clone(),
+//             results,
+//             search_options: options,
+//         })
+//     }
+//
+//     fn more(&self) -> bool {
+//         (self.results.start_at + self.results.max_results) <= self.results.total
+//     }
+// }
+//
+// impl<'a> Iterator for IssuesIter<'a> {
+//     type Item = Issue;
+//     fn next(&mut self) -> Option<Issue> {
+//         self.results.issues.pop().or_else(|| {
+//             if self.more() {
+//                 match self.jira.issues().list(
+//                     self.board,
+//                     &self
+//                         .search_options
+//                         .as_builder()
+//                         .max_results(self.results.max_results)
+//                         .start_at(self.results.start_at + self.results.max_results)
+//                         .build(),
+//                 ).await {
+//                     Ok(new_results) => {
+//                         self.results = new_results;
+//                         self.results.issues.pop()
+//                     }
+//                     _ => None,
+//                 }
+//             } else {
+//                 None
+//             }
+//         })
+//     }
+// }

@@ -3,8 +3,9 @@ extern crate goji;
 
 use goji::{Credentials, Jira};
 use std::env;
+use futures::executor::block_on;
 
-fn main() {
+async fn search_example() {
     drop(env_logger::init());
     if let (Ok(host), Ok(user), Ok(pass)) = (
         env::var("JIRA_HOST"),
@@ -15,9 +16,10 @@ fn main() {
 
         let jira = Jira::new(host, Credentials::Basic(user, pass)).unwrap();
 
-        match jira.search().iter(query, &Default::default()) {
+        // TODO restore to iter
+        match jira.search().list(query, &Default::default()).await {
             Ok(results) => {
-                for issue in results {
+                for issue in results.issues {
                     println!(
                         "{} {} ({}): reporter {} assignee {}",
                         issue.key,
@@ -40,4 +42,9 @@ fn main() {
             Err(err) => panic!("{:#?}", err),
         }
     }
+}
+
+fn main() {
+    let example = search_example(); // Nothing is printed
+    block_on(example); // `future` is run and "hello, world!" is printed
 }
