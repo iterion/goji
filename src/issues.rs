@@ -2,9 +2,10 @@
 
 // Third party
 use url::form_urlencoded;
+use reqwest::{Method, StatusCode};
 
 // Ours
-use crate::{Board, Issue, Jira, Result, SearchOptions};
+use crate::{Error, Board, Issue, Jira, Result, SearchOptions};
 
 /// issue options
 #[derive(Debug)]
@@ -75,6 +76,81 @@ pub struct IssueResults {
     pub issues: Vec<Issue>,
 }
 
+#[derive(Deserialize, Debug)]
+pub struct IssueEditMeta {
+   pub expand: String,
+}
+
+#[derive(Serialize, Debug)]
+pub struct UpdateIssue {
+    pub fields: Fields,
+}
+
+#[derive(Serialize, Debug)]
+pub struct DoTransitionRequest {
+    // "update": {
+    //     "comment": [
+    //         {
+    //             "add": {
+    //                 "body": "Bug has been fixed."
+    //             }
+    //         }
+    //     ]
+    // },
+    // "fields": {
+    //     "assignee": {
+    //         "name": "bob"
+    //     },
+    //     "resolution": {
+    //         "name": "Fixed"
+    //     }
+    // },
+    pub transition: TransitionRequest,
+}
+
+#[derive(Serialize, Debug)]
+pub struct TransitionRequest {
+    pub id: String,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Transition {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "to")]
+    pub to_status: Status,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Status {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "iconUrl")]
+    pub icon_url: String,
+    pub description: String,
+    #[serde(rename = "self")]
+    pub url: String,
+    #[serde(rename = "statusCategory")]
+    pub status_category: StatusCategory,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct StatusCategory {
+    pub id: u64,
+    pub name: String,
+    #[serde(rename = "colorName")]
+    pub color_name: String,
+    pub key: String,
+    #[serde(rename = "self")]
+    pub url: String,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct TransitionResults {
+    pub expand: String,
+    pub transitions: Vec<Transition>,
+}
+
 impl Issues {
     pub fn new(jira: &Jira) -> Issues {
         Issues { jira: jira.clone() }
@@ -85,6 +161,49 @@ impl Issues {
         I: Into<String>,
     {
         self.jira.get("api", &format!("/issue/{}", id.into())).await
+    }
+
+    pub async fn get_transitions<I>(&self, id: I) -> Result<TransitionResults>
+    where
+        I: Into<String>,
+    {
+        self.jira.get("api", &format!("/issue/{}/transitions", id.into())).await
+    }
+
+    pub async fn geteditmeta<I>(&self, id: I) -> Result<serde_json::Value>
+    where
+        I: Into<String>,
+    {
+        self.jira.get("api", &format!("/issue/{}/editmeta", id.into())).await
+    }
+
+    pub async fn do_transition<I>(&self, id: I, comment: Option<String>, transition_id: I) -> Result<()>
+    where
+        I: Into<String>,
+    {
+        let transition_request = DoTransitionRequest {
+            transition: TransitionRequest {
+                id: transition_id.into()
+            }
+        };
+
+        let data = serde_json::to_string(&transition_request)?;
+        let res = self.jira.execute(Method::POST, "api", &format!("/issue/{}/transitions", id.into()), Some(data.into_bytes())).await?;
+        match res.status() {
+            StatusCode::UNAUTHORIZED => Err(Error::Unauthorized),
+            StatusCode::METHOD_NOT_ALLOWED => Err(Error::MethodNotAllowed),
+            StatusCode::NOT_FOUND => Err(Error::NotFound),
+            _ => {
+                Ok(())
+            }
+        }
+    }
+
+    pub async fn update<I>(&self, id: I, data: UpdateIssue) -> Result<Issue>
+    where
+        I: Into<String>,
+    {
+        self.jira.put("api", &format!("/issue/{}", id.into()), data).await
     }
 
     pub async fn create(&self, data: CreateIssue) -> Result<CreateResponse> {

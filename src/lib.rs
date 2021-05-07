@@ -118,11 +118,49 @@ impl Jira {
         self.request::<D>(Method::POST, api_name, endpoint, Some(data.into_bytes())).await
     }
 
+    async fn put<D, S>(&self, api_name: &str, endpoint: &str, body: S) -> Result<D>
+    where
+        D: DeserializeOwned,
+        S: Serialize,
+    {
+        let data = serde_json::to_string::<S>(&body)?;
+        debug!("Json request: {}", data);
+        self.request::<D>(Method::PUT, api_name, endpoint, Some(data.into_bytes())).await
+    }
+
     async fn get<D>(&self, api_name: &str, endpoint: &str) -> Result<D>
     where
         D: DeserializeOwned,
     {
         self.request::<D>(Method::GET, api_name, endpoint, None).await
+    }
+
+    async fn execute(
+        &self,
+        method: Method,
+        api_name: &str,
+        endpoint: &str,
+        body: Option<Vec<u8>>,
+    ) -> Result<reqwest::Response> {
+        let url = format!("{}/rest/{}/latest{}", self.host, api_name, endpoint);
+        debug!("url -> {:?}", url);
+
+        let req = self.client.request(method, &url);
+        let builder = match self.credentials {
+            Credentials::Basic(ref user, ref pass) => req
+                .basic_auth(user.to_owned(), Some(pass.to_owned()))
+                .header(CONTENT_TYPE, "application/json"),
+        };
+
+        let resp = match body {
+            Some(bod) => builder.body(bod).send().await,
+            _ => builder.send().await,
+        };
+
+        match resp {
+            Ok(ok) => Ok(ok),
+            Err(err) => Err(err.into())
+        }
     }
 
     async fn request<D>(
@@ -135,20 +173,7 @@ impl Jira {
     where
         D: DeserializeOwned,
     {
-        let url = format!("{}/rest/{}/latest{}", self.host, api_name, endpoint);
-        debug!("url -> {:?}", url);
-
-        let req = self.client.request(method, &url);
-        let builder = match self.credentials {
-            Credentials::Basic(ref user, ref pass) => req
-                .basic_auth(user.to_owned(), Some(pass.to_owned()))
-                .header(CONTENT_TYPE, "application/json"),
-        };
-
-        let res = match body {
-            Some(bod) => builder.body(bod).send().await?,
-            _ => builder.send().await?,
-        };
+        let res = self.execute(method, api_name, endpoint, body).await?;
 
         match res.status() {
             StatusCode::UNAUTHORIZED => Err(Error::Unauthorized),

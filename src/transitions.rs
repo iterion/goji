@@ -41,6 +41,7 @@ impl Transitions {
                 trans,
             ).await
             .or_else(|e| match e {
+                // Perhaps we can better handle this upstream
                 Error::Serde(_) => Ok(()),
                 e => Err(e),
             })
